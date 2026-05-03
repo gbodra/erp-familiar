@@ -161,9 +161,17 @@ export async function fetchCalComBookings(dateFromStr?: string, dateToStr?: stri
       console.error("Erro ao buscar busy-times do Cal.com:", busyError);
     }
 
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const filteredEvents = mappedEvents.filter((ev: any) => {
+      const start = new Date(ev.startTime);
+      return start >= todayStart;
+    });
+
     return {
       success: true,
-      data: mappedEvents
+      data: filteredEvents
     };
   } catch (err: any) {
     console.error("fetchCalComBookings error:", err);
@@ -181,13 +189,34 @@ function getPrismaClient() {
   return new PrismaClient();
 }
 
+import { auth } from "@/auth";
+
 export async function getCalendarEvents(dateFromStr?: string, dateToStr?: string) {
   try {
+    const session = await auth();
     const prismaClient = getPrismaClient();
     const where: any = {};
     if (dateFromStr && dateToStr) {
       where.startTime = { lte: new Date(dateToStr) };
       where.endTime = { gte: new Date(dateFromStr) };
+    }
+
+    let userId: string | null = null;
+    if (session?.user?.id) {
+      const dbUser = await prismaClient.user.findUnique({
+        where: { id: session.user.id },
+        select: { id: true }
+      });
+      if (dbUser) {
+        userId = dbUser.id;
+      }
+    }
+
+    if (session?.user?.role !== 'ADMIN') {
+      where.OR = [
+        { userId: userId },
+        { userId: null },
+      ];
     }
 
     const dbEvents = await prismaClient.calendarEvent.findMany({
@@ -215,8 +244,36 @@ export async function getCalendarEvents(dateFromStr?: string, dateToStr?: string
 
 export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string) {
   try {
+    const session = await auth();
     const prismaClient = getPrismaClient();
-    const calRes = await fetchCalComBookings(dateFromStr, dateToStr);
+
+    let userId: string | null = null;
+    if (session?.user?.id) {
+      const dbUser = await prismaClient.user.findUnique({
+        where: { id: session.user.id },
+        select: { id: true }
+      });
+      if (!dbUser) {
+        return { success: false, error: "Usuário não encontrado no banco de dados." };
+      }
+      userId = dbUser.id;
+    }
+
+    // Never fetch from Cal.com in the past
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let effectiveDateFromStr = dateFromStr;
+    if (effectiveDateFromStr) {
+      const parsedFrom = new Date(effectiveDateFromStr);
+      if (parsedFrom < today) {
+        effectiveDateFromStr = today.toISOString();
+      }
+    } else {
+      effectiveDateFromStr = today.toISOString();
+    }
+
+    const calRes = await fetchCalComBookings(effectiveDateFromStr, dateToStr);
     if (!calRes.success || !calRes.data) {
       return calRes;
     }
@@ -227,21 +284,29 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
     const fromDateStr = dateFromStr || new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString();
     const toDateStr = dateToStr || new Date(new Date().getFullYear(), new Date().getMonth() + 2, 0).toISOString();
 
-    const startRange = new Date(fromDateStr);
-    const endRange = new Date(toDateStr);
+    const origStartRange = new Date(fromDateStr);
+    const origEndRange = new Date(toDateStr);
 
-    // 1. Get current DB events in timeframe
+    const startRange = origStartRange < today ? today : origStartRange;
+    const endRange = origEndRange;
+
+    // 1. Get current DB events in timeframe (only today onwards)
+    const existingDbWhere: any = {
+      startTime: { lte: endRange },
+      endTime: { gte: startRange },
+    };
+
+    if (session?.user?.role !== 'ADMIN') {
+      existingDbWhere.userId = userId;
+    }
+
     const existingDbEvents = await prismaClient.calendarEvent.findMany({
-      where: {
-        startTime: { lte: endRange },
-        endTime: { gte: startRange },
-      },
+      where: existingDbWhere,
     });
 
     const calComIds = new Set(calComEvents.map((ev: any) => String(ev.id)));
-    const dbIds = new Set(existingDbEvents.map((ev) => ev.id));
 
-    // 2. Delete events from DB that are no longer in Cal.com list for this timeframe
+    // 2. Delete events from DB that are no longer in Cal.com list for this timeframe (today onwards)
     const idsToDelete = existingDbEvents
       .filter((ev) => !calComIds.has(ev.id))
       .map((ev) => ev.id);
@@ -252,10 +317,11 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
       });
     }
 
-    // 3. Upsert Cal.com events into the DB
+    // 3. Upsert Cal.com events into the DB (today onwards)
     for (const ev of calComEvents) {
       const evData = {
         id: String(ev.id),
+        userId: userId,
         uid: ev.uid || null,
         title: ev.title || "Sem título",
         description: ev.description || null,
@@ -268,6 +334,7 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
       await prismaClient.calendarEvent.upsert({
         where: { id: evData.id },
         update: {
+          userId: evData.userId,
           uid: evData.uid,
           title: evData.title,
           description: evData.description,
@@ -280,12 +347,21 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
       });
     }
 
-    // 4. Return complete set of events from the timeframe
+    // 4. Return complete set of events from the ORIGINAL requested timeframe
+    const finalWhere: any = {
+      startTime: { lte: origEndRange },
+      endTime: { gte: origStartRange },
+    };
+
+    if (session?.user?.role !== 'ADMIN') {
+      finalWhere.OR = [
+        { userId: userId },
+        { userId: null },
+      ];
+    }
+
     const updatedDbEvents = await prismaClient.calendarEvent.findMany({
-      where: {
-        startTime: { lte: endRange },
-        endTime: { gte: startRange },
-      },
+      where: finalWhere,
       orderBy: { startTime: "asc" },
     });
 

@@ -25,6 +25,8 @@ import {
 
 import { CreditCard, Calendar } from "@phosphor-icons/react"
 
+import Image from "next/image"
+
 export function AppSidebar({ role }: { role?: string }) {
   // Menu items.
   const items = [
@@ -52,8 +54,8 @@ export function AppSidebar({ role }: { role?: string }) {
     <Sidebar>
       <SidebarHeader className="p-4 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:text-zinc-900">
-            <span className="font-bold text-lg">F</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-md overflow-hidden bg-transparent">
+            <Image src="/icon.png" alt="Família ERP" width={32} height={32} className="object-contain" />
           </div>
           <span className="font-semibold text-lg tracking-tight">Família ERP</span>
         </div>

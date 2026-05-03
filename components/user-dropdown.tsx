@@ -9,8 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { SignOut, Key, User } from "@phosphor-icons/react"
-import Link from "next/link"
+import { SignOut, User } from "@phosphor-icons/react"
 import { signOut } from "next-auth/react"
 
 export function UserDropdown({ 
@@ -22,7 +21,7 @@ export function UserDropdown({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-4 outline-none">
+      <DropdownMenuTrigger className="flex items-center gap-4 outline-none cursor-pointer">
         <div className="flex flex-col text-right">
           <span className="text-sm font-medium leading-none text-zinc-900 dark:text-zinc-100">{name}</span>
           <span className="text-xs text-zinc-500 dark:text-zinc-400">{role === 'ADMIN' ? 'Admin' : 'Usuário'}</span>
@@ -35,22 +34,10 @@ export function UserDropdown({
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {role === 'ADMIN' && (
-          <DropdownMenuItem asChild>
-            <Link href="/register" className="cursor-pointer flex items-center gap-2">
-              <User size={16} />
-              <span>Cadastrar Novo Usuário</span>
-            </Link>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem asChild>
-          <Link href="/change-password" className="cursor-pointer flex items-center gap-2">
-            <Key size={16} />
-            <span>Trocar Senha</span>
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => signOut()} className="text-red-600 dark:text-red-400 cursor-pointer flex items-center gap-2">
+        <DropdownMenuItem 
+          onClick={() => signOut({ callbackUrl: "/login" })} 
+          className="text-red-600 dark:text-red-400 cursor-pointer flex items-center gap-2"
+        >
           <SignOut size={16} />
           <span>Sair</span>
         </DropdownMenuItem>
@@ -58,3 +45,4 @@ export function UserDropdown({
     </DropdownMenu>
   )
 }
+

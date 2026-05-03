@@ -31,14 +31,13 @@ export default function CalendarPage() {
   }, [currentDate])
 
   const loadAndSyncBookings = async () => {
-    setIsSyncing(true)
-    setSyncError(null)
-
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
 
     const fromDate = new Date(year, month - 1, 1)
     const toDate = new Date(year, month + 2, 0)
+
+    setSyncError(null)
 
     // 1. Fetch instantly from the DB
     const dbRes = await getCalendarEvents(fromDate.toISOString(), toDate.toISOString())
@@ -46,16 +45,25 @@ export default function CalendarPage() {
       setEvents(dbRes.data)
     }
 
-    // 2. Sync with Cal.com
-    const syncRes = await syncCalComEvents(fromDate.toISOString(), toDate.toISOString())
-    if (syncRes.success && syncRes.data) {
-      setEvents(syncRes.data)
-    } else {
-      setSyncError(syncRes.error || "Erro ao sincronizar dados do Cal.com")
-    }
-
-    setIsSyncing(false)
+    // 2. Sync with Cal.com in the background
+    setIsSyncing(true)
+    syncCalComEvents(fromDate.toISOString(), toDate.toISOString())
+      .then((syncRes) => {
+        if (syncRes.success && syncRes.data) {
+          setEvents(syncRes.data)
+        } else if (syncRes.error) {
+          setSyncError(syncRes.error)
+        }
+      })
+      .catch((err) => {
+        setSyncError(err.message || "Erro ao sincronizar dados do Cal.com")
+      })
+      .finally(() => {
+        setIsSyncing(false)
+      })
   }
+
+
 
   // --- DATE HELPERS ---
   const getDaysInMonth = (year: number, month: number) => {

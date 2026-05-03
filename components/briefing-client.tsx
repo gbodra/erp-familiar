@@ -57,16 +57,33 @@ export function BriefingClient({
   // Fetch financial data independently on mount
   useEffect(() => {
     async function loadFinancial() {
-      setIsFinancialLoading(true)
+      const cacheKey = `financial_${startOfWeekIso}_${endOfWeekIso}`;
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < 2 * 60 * 1000) {
+            setFinancialData(data);
+            setIsFinancialLoading(false);
+          }
+        } catch (e) {
+          // invalid cache, ignore
+        }
+      } else {
+        setIsFinancialLoading(true);
+      }
+
       const res = await fetchDashboardFinancialData(startOfWeekIso, endOfWeekIso)
       if (res.success) {
-        setFinancialData({
+        const data = {
           totalDebits: res.totalDebits || 0,
           largestDebit: res.largestDebit || 0,
           transactionsCount: res.transactionsCount || 0,
           displayTransactions: res.displayTransactions || [],
           usingFallback: res.usingFallback || false,
-        })
+        };
+        setFinancialData(data);
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data, timestamp: Date.now() }));
       }
       setIsFinancialLoading(false)
     }
@@ -77,6 +94,7 @@ export function BriefingClient({
   useEffect(() => {
     async function loadEvents() {
       setIsEventsLoading(true)
+
       const dbRes = await getCalendarEvents(startOfWeekIso, endOfWeekIso)
       if (dbRes.success && dbRes.data) {
         const sorted = dbRes.data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
@@ -85,15 +103,24 @@ export function BriefingClient({
       setIsEventsLoading(false)
 
       setIsSyncing(true)
-      const syncRes = await syncCalComEvents(startOfWeekIso, endOfWeekIso)
-      if (syncRes.success && syncRes.data) {
-        const sorted = syncRes.data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-        setEvents(sorted)
-      }
-      setIsSyncing(false)
+      syncCalComEvents(startOfWeekIso, endOfWeekIso)
+        .then((syncRes) => {
+          if (syncRes.success && syncRes.data) {
+            const sorted = syncRes.data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+            setEvents(sorted)
+          }
+        })
+        .catch((err) => {
+          console.error("Erro ao sincronizar eventos no briefing:", err)
+        })
+        .finally(() => {
+          setIsSyncing(false)
+        })
     }
     loadEvents()
   }, [startOfWeekIso, endOfWeekIso])
+
+
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {

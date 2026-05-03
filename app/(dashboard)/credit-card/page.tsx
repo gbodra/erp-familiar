@@ -6,6 +6,8 @@ import { InvoicesTable } from '@/components/invoices-table';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
+import { auth } from '@/auth';
+
 export const metadata: Metadata = {
   title: 'Cartão de Crédito - Família ERP',
 };
@@ -15,12 +17,19 @@ export default async function CreditCardPage({
 }: {
   searchParams: Promise<{ page?: string }>;
 }) {
+  const session = await auth();
   const resolvedSearchParams = await searchParams;
   const page = Number(resolvedSearchParams?.page) || 1;
   const pageSize = 10;
   
+  const where: any = {};
+  if (session?.user?.role !== 'ADMIN') {
+    where.userId = session?.user?.id;
+  }
+
   const [invoices, totalCount] = await Promise.all([
     prisma.invoice.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -33,10 +42,11 @@ export default async function CreditCardPage({
         status: true,
       }
     }),
-    prisma.invoice.count()
+    prisma.invoice.count({ where })
   ]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
+
 
   return (
     <div className="flex-1 p-8 pt-6 overflow-auto">

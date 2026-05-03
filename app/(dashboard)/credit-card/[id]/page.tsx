@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 
+import { auth } from '@/auth';
+
 export const metadata: Metadata = {
   title: 'Detalhes da Fatura - Família ERP',
 };
@@ -15,6 +17,7 @@ export default async function InvoiceDetailsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const session = await auth();
   const resolvedParams = await params;
   const invoice = await prisma.invoice.findUnique({
     where: { id: resolvedParams.id },
@@ -28,6 +31,11 @@ export default async function InvoiceDetailsPage({
   if (!invoice) {
     notFound();
   }
+
+  if (session?.user?.role !== 'ADMIN' && invoice.userId !== session?.user?.id) {
+    notFound();
+  }
+
 
   return (
     <div className="flex-1 p-8 pt-6 overflow-auto">
