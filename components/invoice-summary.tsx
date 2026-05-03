@@ -18,15 +18,37 @@ type Invoice = {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b'];
 
-export function InvoiceSummary({ invoice }: { invoice: Invoice }) {
+import { useState, useEffect } from 'react';
+
+export function InvoiceSummary({ 
+  invoice,
+  selectedCategory,
+  onSelectCategory
+}: { 
+  invoice: Invoice;
+  selectedCategory: string | null;
+  onSelectCategory: (cat: string | null) => void;
+}) {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const filteredTransactions = selectedCategory
+    ? invoice.transactions.filter(t => (t.category || 'Outros') === selectedCategory)
+    : invoice.transactions;
+
   // Compute totals
-  const totalDebits = invoice.transactions
+  const totalDebits = filteredTransactions
     .filter((t) => t.type === 'DEBIT')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalCredits = invoice.transactions
+  const totalCredits = filteredTransactions
     .filter((t) => t.type === 'CREDIT')
     .reduce((sum, t) => sum + t.amount, 0);
+
+  const displayTotalAmount = selectedCategory ? totalDebits - totalCredits : invoice.totalAmount;
 
   // Compute Categories for Chart
   const categoryMap = invoice.transactions
@@ -78,12 +100,14 @@ export function InvoiceSummary({ invoice }: { invoice: Invoice }) {
       <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="shadow-sm border-zinc-200 dark:border-zinc-800 bg-blue-50 dark:bg-blue-950/20 border-blue-100 dark:border-blue-900/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-blue-800 dark:text-blue-300">Valor Total da Fatura</CardTitle>
+            <CardTitle className="text-sm font-medium text-blue-800 dark:text-blue-300">
+              {selectedCategory ? `Total: ${selectedCategory}` : 'Valor Total da Fatura'}
+            </CardTitle>
             <Receipt size={24} className="text-blue-600 dark:text-blue-400" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-900 dark:text-blue-100">
-              {formatCurrency(invoice.totalAmount)}
+              {formatCurrency(displayTotalAmount)}
             </div>
           </CardContent>
         </Card>
@@ -119,28 +143,42 @@ export function InvoiceSummary({ invoice }: { invoice: Invoice }) {
         </CardHeader>
         <CardContent className="h-[300px]">
           {categoryData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <RechartsTooltip 
-                  formatter={(value: any) => formatCurrency(Number(value))}
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #e4e4e7' }}
-                />
-                <Legend layout="vertical" verticalAlign="middle" align="right" />
-              </PieChart>
-            </ResponsiveContainer>
+            isMounted ? (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                    onClick={(data) => {
+                      const clickedCat = data.name;
+                      onSelectCategory(selectedCategory === clickedCat ? null : clickedCat);
+                    }}
+                    className="cursor-pointer"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={COLORS[index % COLORS.length]} 
+                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                        style={{
+                          opacity: selectedCategory ? (selectedCategory === entry.name ? 1 : 0.3) : 1,
+                        }}
+                      />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip 
+                    formatter={(value: any) => formatCurrency(Number(value))}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #e4e4e7' }}
+                  />
+                  <Legend layout="vertical" verticalAlign="middle" align="right" />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : null
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-500">
               Sem dados suficientes

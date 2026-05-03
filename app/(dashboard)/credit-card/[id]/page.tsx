@@ -1,9 +1,7 @@
 import { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import { notFound } from 'next/navigation';
-import { InvoiceSummary } from '@/components/invoice-summary';
-import { TransactionsTable } from '@/components/transactions-table';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { InvoiceDashboard } from '@/components/invoice-dashboard';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -53,21 +51,7 @@ export default async function InvoiceDetailsPage({
         </div>
       </div>
 
-      <div className="space-y-6">
-        <InvoiceSummary invoice={invoice} />
-        
-        <Card className="shadow-sm border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle>Transações</CardTitle>
-            <CardDescription>
-              Todas as despesas extraídas da fatura {invoice.reference}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TransactionsTable transactions={invoice.transactions} />
-          </CardContent>
-        </Card>
-      </div>
+      <InvoiceDashboard invoice={invoice} />
     </div>
   );
 }

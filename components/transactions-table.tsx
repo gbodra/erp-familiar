@@ -15,9 +15,16 @@ type Transaction = {
   type: string;
 };
 
-export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
+export function TransactionsTable({ 
+  transactions, 
+  selectedCategory, 
+  onSelectCategory 
+}: { 
+  transactions: Transaction[],
+  selectedCategory: string | null,
+  onSelectCategory: (cat: string | null) => void
+}) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const uniqueCategories = Array.from(new Set(transactions.map((t) => t.category || 'Outros'))).sort();
 
@@ -56,7 +63,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
           <Button
             variant={selectedCategory === null ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setSelectedCategory(null)}
+            onClick={() => onSelectCategory(null)}
             className="rounded-full text-xs h-7"
           >
             Todas
@@ -66,7 +73,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
               key={cat}
               variant={selectedCategory === cat ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+              onClick={() => onSelectCategory(selectedCategory === cat ? null : cat)}
               className="rounded-full text-xs h-7"
             >
               {cat}
