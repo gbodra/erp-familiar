@@ -60,3 +60,28 @@ export async function uploadAndParseInvoice(formData: FormData) {
     return { error: error.message || 'Erro interno ao processar a fatura.' };
   }
 }
+
+export async function deleteInvoice(id: string) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { error: 'Não autorizado' };
+    }
+
+    // Prisma will handle deleting transactions via cascade if configured,
+    // otherwise we delete transactions manually first.
+    await prisma.creditCardTransaction.deleteMany({
+      where: { invoiceId: id },
+    });
+
+    await prisma.invoice.delete({
+      where: { id },
+    });
+
+    revalidatePath('/credit-card');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Delete invoice error:', error);
+    return { error: 'Falha ao excluir a fatura.' };
+  }
+}

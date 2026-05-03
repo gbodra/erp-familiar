@@ -1,3 +1,5 @@
+import { GoogleGenAI, Type, Schema } from '@google/genai';
+
 export type ParsedTransaction = {
   date: Date;
   description: string;
@@ -6,108 +8,123 @@ export type ParsedTransaction = {
   category: string;
 };
 
-// Auto-categorization rules
-const CATEGORY_RULES: Record<string, string[]> = {
-  'Alimentação': ['ifood', 'restaurante', 'padaria', 'mc donalds', 'mcdonalds', 'bk', 'burger king', 'mercado', 'supermercado', 'pao de acucar', 'carrefour', 'z e d', 'bar', 'lanchonete', 'sorveteria', 'doceria'],
-  'Transporte': ['uber', '99', 'posto', 'shell', 'ipiranga', 'petrobras', 'estacionamento', 'sem parar', 'conectar', 'veloe', '99app'],
-  'Assinaturas & Lazer': ['netflix', 'spotify', 'amazon prime', 'disney', 'hbo', 'cinema', 'ingresso', 'sympla', 'eventim', 'apple', 'google', 'steam', 'playstation', 'xbox'],
-  'Saúde & Bem-estar': ['farmacia', 'droga raia', 'drogasil', 'pague menos', 'unimed', 'sulamerica', 'hospital', 'clinica', 'smart fit', 'gympass', 'academia'],
-  'Compras': ['amazon', 'mercado livre', 'shopee', 'aliexpress', 'shein', 'magalu', 'americanas', 'zara', 'renner', 'c&a', 'cea', 'riachuelo'],
-  'Moradia': ['enel', 'light', 'copel', 'cemig', 'sabesp', 'ceg', 'comgas', 'condominio', 'aluguel'],
-  'Educação': ['escola', 'colegio', 'faculdade', 'universidade', 'curso', 'alura', 'udemy'],
-};
-
-function guessCategory(description: string): string {
-  const lowerDesc = description.toLowerCase();
-  for (const [category, keywords] of Object.entries(CATEGORY_RULES)) {
-    if (keywords.some((keyword) => lowerDesc.includes(keyword))) {
-      return category;
+const responseSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    reference: {
+      type: Type.STRING,
+      description: "O mês e ano de referência da fatura no formato YYYY-MM, ex: '2023-10'."
+    },
+    totalAmount: {
+      type: Type.NUMBER,
+      description: "O valor líquido total final a ser pago na fatura. Ignore parcelas futuras ou saldo anterior que não afete este total exato."
+    },
+    transactions: {
+      type: Type.ARRAY,
+      description: "Lista de todas as transações (compras, pagamentos, estornos) presentes nesta fatura.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          date: {
+            type: Type.STRING,
+            description: "Data da transação no formato YYYY-MM-DD. Infira o ano com base no mês e no ano de referência da fatura."
+          },
+          description: {
+            type: Type.STRING,
+            description: "Descrição ou nome do estabelecimento da transação."
+          },
+          amount: {
+            type: Type.NUMBER,
+            description: "O valor absoluto (positivo) da transação."
+          },
+          type: {
+            type: Type.STRING,
+            enum: ["CREDIT", "DEBIT"],
+            description: "Tipo da transação. DEBIT para despesas/compras, CREDIT para pagamentos recebidos ou estornos."
+          },
+          category: {
+            type: Type.STRING,
+            description: "Categoria curta para a transação. Ex: Alimentação, Transporte, Saúde, Moradia, Lazer, Educação, Compras, Outros. Use 'Pagamento/Estorno' se for CREDIT."
+          }
+        },
+        required: ["date", "description", "amount", "type", "category"]
+      }
     }
-  }
-  return 'Outros';
-}
-
-function parseAmount(amountStr: string): number {
-  return parseFloat(amountStr.replace(/\./g, '').replace(',', '.'));
-}
-
-function parseDate(dateStr: string, referenceYear: number): Date {
-  const [day, month] = dateStr.split('/');
-  return new Date(referenceYear, parseInt(month) - 1, parseInt(day));
-}
+  },
+  required: ["reference", "totalAmount", "transactions"]
+};
 
 export async function parseCreditCardPdf(fileBuffer: Buffer, bank: 'ITAU' | 'C6'): Promise<{
   reference: string;
   totalAmount: number;
   transactions: ParsedTransaction[];
 }> {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('A variável GEMINI_API_KEY não está configurada no ambiente.');
+  }
+
   try {
-    // Polyfill browser globals that pdf-parse/pdf.js expects in Node.js
-    const g = globalThis as any;
-    if (!g.DOMMatrix) g.DOMMatrix = class DOMMatrix { constructor() {} };
-    if (!g.Path2D) g.Path2D = class Path2D { constructor() {} };
-    if (!g.ImageData) g.ImageData = class ImageData { constructor() {} };
+    const ai = new GoogleGenAI({});
 
-    // pdf-parse v2 uses a class-based API
-    const { PDFParse } = require('pdf-parse');
-    
-    const parser = new PDFParse({ data: new Uint8Array(fileBuffer) });
-    await parser.load();
-    const result = await parser.getText();
-    await parser.destroy();
+    const prompt = `Você é um extrator de dados financeiros especialista. A seguir está um PDF de uma fatura de cartão de crédito do banco ${bank}.
+Sua tarefa é analisar o documento e extrair os dados em formato estruturado.
 
-    // pdf-parse v2 getText() returns { pages, text, total }
-    const text: string = typeof result === 'string' ? result : result.text;
+Regras importantes:
+1. Extraia o "totalAmount" como o valor final EXATO da fatura atual.
+2. Identifique transações de estornos e classifique-os como "CREDIT". Todas as compras devem ser "DEBIT".
+3. IGNORE TOTALMENTE lançamentos de "Pagamento efetuado", "Pagamento de fatura" ou recebimento de pagamentos da fatura anterior. Eles NÃO devem entrar na lista de transações.
+4. Para a "description", mantenha o nome completo e exato que aparece na fatura (ex: 'SHOPEE *VivaFestas', 'GNT*TEMU 01/02'). NÃO limpe a descrição.
+5. Para a "category", se for uma compra em plataformas como Shopee, Temu, Mercado Livre, Ifood, Uber, AliExpress, retorne o próprio nome da loja limpo (ex: 'Shopee', 'Temu', 'Mercado Livre'). Para outras compras, use categorias genéricas como 'Alimentação', 'Transporte', 'Serviços', etc.
+6. Use o valor absoluto (positivo) para o "amount". Deduza o ano corretamente para a data (YYYY-MM-DD).
+`;
 
-    const now = new Date();
-    const referenceYear = now.getFullYear();
-    const referenceMonth = (now.getMonth() + 1).toString().padStart(2, '0');
-    const reference = `${referenceYear}-${referenceMonth}`;
-
-    let totalAmount = 0;
-    const transactions: ParsedTransaction[] = [];
-
-    const lines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
-
-    for (const line of lines) {
-      const dateMatch = line.match(/^(\d{2}\/\d{2})/);
-      const amountMatch = line.match(/(-?\d{1,3}(?:\.\d{3})*,\d{2})$/);
-
-      if (dateMatch && amountMatch) {
-        const dateStr = dateMatch[1];
-        const amountStr = amountMatch[1];
-
-        const description = line.substring(dateStr.length, line.length - amountStr.length).trim();
-
-        if (!description) continue;
-
-        let amount = parseAmount(amountStr);
-        let type: 'CREDIT' | 'DEBIT' = 'DEBIT';
-
-        if (amount < 0 || line.includes('PAGAMENTO') || line.includes('ESTORNO') || description.toLowerCase().includes('pagamento')) {
-          type = 'CREDIT';
-          amount = Math.abs(amount);
-        } else {
-          totalAmount += amount;
+    const response = await ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || 'gemini-3-flash-preview',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: fileBuffer.toString('base64')
+              }
+            }
+          ]
         }
-
-        transactions.push({
-          date: parseDate(dateStr, referenceYear),
-          description,
-          amount,
-          type,
-          category: type === 'CREDIT' ? 'Pagamento/Estorno' : guessCategory(description),
-        });
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema,
+        temperature: 0.1,
       }
+    });
+
+    const responseText = response.text;
+    if (!responseText) {
+      throw new Error('Resposta vazia da API do Gemini.');
     }
 
+    const parsedData = JSON.parse(responseText);
+
+    // Converte as datas string para objetos Date
+    const transactions: ParsedTransaction[] = parsedData.transactions.map((tx: any) => {
+      // Cria a data evitando problemas de timezone (assumindo meia noite UTC)
+      const date = new Date(tx.date + 'T00:00:00Z');
+      return {
+        ...tx,
+        date
+      };
+    });
+
     return {
-      reference,
-      totalAmount,
-      transactions,
+      reference: parsedData.reference,
+      totalAmount: parsedData.totalAmount,
+      transactions
     };
-  } catch (error) {
-    console.error('Error parsing PDF:', error);
-    throw new Error('Falha ao interpretar o arquivo PDF.');
+  } catch (error: any) {
+    console.error('Erro na extração de PDF via Gemini:', error);
+    throw new Error('Falha ao processar a fatura com Inteligência Artificial. ' + (error.message || ''));
   }
 }

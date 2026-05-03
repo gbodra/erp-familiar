@@ -45,8 +45,21 @@ export function InvoiceSummary({ invoice }: { invoice: Invoice }) {
   const establishmentsMap = invoice.transactions
     .filter((t) => t.type === 'DEBIT')
     .reduce((acc, t) => {
-      // Basic normalization to remove extra spaces or numbers
-      const name = t.description.replace(/\d+/g, '').trim();
+      let name = t.description;
+      const lowerDesc = name.toLowerCase();
+      
+      // Aplicar regra de nome de loja
+      if (lowerDesc.includes('shopee')) name = 'Shopee';
+      else if (lowerDesc.includes('temu')) name = 'Temu';
+      else if (lowerDesc.includes('mercado livre') || lowerDesc.includes('mercadopago')) name = 'Mercado Livre';
+      else if (lowerDesc.includes('aliexpress')) name = 'AliExpress';
+      else if (lowerDesc.includes('ifood')) name = 'iFood';
+      else if (lowerDesc.includes('uber')) name = 'Uber';
+      else {
+        // Limpeza basica removendo sufixos apos asterisco e numeros
+        name = name.split('*')[0].replace(/\d+/g, '').trim();
+      }
+
       acc[name] = (acc[name] || 0) + t.amount;
       return acc;
     }, {} as Record<string, number>);
@@ -106,7 +119,7 @@ export function InvoiceSummary({ invoice }: { invoice: Invoice }) {
         </CardHeader>
         <CardContent className="h-[300px]">
           {categoryData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <PieChart>
                 <Pie
                   data={categoryData}

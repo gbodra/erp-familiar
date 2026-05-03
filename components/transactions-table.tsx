@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { MagnifyingGlass } from '@phosphor-icons/react';
@@ -16,13 +17,15 @@ type Transaction = {
 
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  const uniqueCategories = Array.from(new Set(transactions.map((t) => t.category || 'Outros'))).sort();
 
   const filteredTransactions = transactions.filter((t) => {
     const term = searchTerm.toLowerCase();
-    return (
-      t.description.toLowerCase().includes(term) ||
-      (t.category && t.category.toLowerCase().includes(term))
-    );
+    const matchesSearch = t.description.toLowerCase().includes(term) || ((t.category || 'Outros').toLowerCase().includes(term));
+    const matchesCategory = selectedCategory ? (t.category || 'Outros') === selectedCategory : true;
+    return matchesSearch && matchesCategory;
   });
 
   const formatCurrency = (value: number) => {
@@ -47,6 +50,30 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
           />
         </div>
       </div>
+      
+      {uniqueCategories.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Button
+            variant={selectedCategory === null ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setSelectedCategory(null)}
+            className="rounded-full text-xs h-7"
+          >
+            Todas
+          </Button>
+          {uniqueCategories.map((cat) => (
+            <Button
+              key={cat}
+              variant={selectedCategory === cat ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+              className="rounded-full text-xs h-7"
+            >
+              {cat}
+            </Button>
+          ))}
+        </div>
+      )}
       <div className="rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         <Table>
           <TableHeader className="bg-zinc-50 dark:bg-zinc-900/50">
