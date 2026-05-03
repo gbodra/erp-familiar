@@ -23,7 +23,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-import { CreditCard } from "@phosphor-icons/react"
+import { CreditCard, Calendar } from "@phosphor-icons/react"
 
 export function AppSidebar({ role }: { role?: string }) {
   // Menu items.
@@ -35,10 +35,10 @@ export function AppSidebar({ role }: { role?: string }) {
       show: true,
     },
     {
-      title: "Usuários",
-      url: "/users",
-      icon: Users,
-      show: role === 'ADMIN',
+      title: "Calendário",
+      url: "/calendar",
+      icon: Calendar,
+      show: true,
     },
     {
       title: "Cartão de Crédito",
@@ -77,6 +77,20 @@ export function AppSidebar({ role }: { role?: string }) {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      {role === 'ADMIN' && (
+        <SidebarFooter className="p-4 border-t border-zinc-200 dark:border-zinc-800">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <a href="/admin" className="flex items-center gap-3">
+                  <Gear size={20} weight="duotone" />
+                  <span>Admin</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      )}
     </Sidebar>
   )
 }

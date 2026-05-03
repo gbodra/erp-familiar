@@ -5,7 +5,9 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient()
+  globalForPrisma.prisma && typeof (globalForPrisma.prisma as any).calendarEvent !== "undefined"
+    ? globalForPrisma.prisma
+    : new PrismaClient()
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
+

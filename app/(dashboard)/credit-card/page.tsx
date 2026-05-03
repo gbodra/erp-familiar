@@ -30,6 +30,7 @@ export default async function CreditCardPage({
         bank: true,
         totalAmount: true,
         createdAt: true,
+        status: true,
       }
     }),
     prisma.invoice.count()

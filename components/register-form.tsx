@@ -19,7 +19,7 @@ export function RegisterForm() {
 
   useEffect(() => {
     if (errorMessage === 'success') {
-      router.push('/login');
+      router.push('/admin');
     }
   }, [errorMessage, router]);
 
@@ -89,7 +89,7 @@ export function RegisterForm() {
             {isPending ? 'Criando conta...' : 'Cadastrar'}
           </Button>
           <div className="text-sm text-center text-zinc-500 dark:text-zinc-400">
-            Já tem conta? <Link href="/login" className="text-zinc-900 dark:text-zinc-50 underline">Faça login</Link>
+            <Link href="/admin" className="text-zinc-900 dark:text-zinc-50 underline">Voltar para Administração</Link>
           </div>
         </CardFooter>
       </form>

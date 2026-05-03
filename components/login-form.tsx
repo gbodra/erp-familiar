@@ -7,8 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { WarningCircle } from '@phosphor-icons/react';
-import Link from 'next/link';
-
 export function LoginForm() {
   const [errorMessage, formAction, isPending] = useActionState(
     authenticate,
@@ -61,9 +59,6 @@ export function LoginForm() {
           <Button className="w-full" aria-disabled={isPending} disabled={isPending}>
             {isPending ? 'Entrando...' : 'Entrar'}
           </Button>
-          <div className="text-sm text-center text-zinc-500 dark:text-zinc-400">
-            Ainda não tem conta? <Link href="/register" className="text-zinc-900 dark:text-zinc-50 underline">Cadastre-se</Link>
-          </div>
         </CardFooter>
       </form>
     </Card>

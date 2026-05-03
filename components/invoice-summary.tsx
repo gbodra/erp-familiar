@@ -144,40 +144,42 @@ export function InvoiceSummary({
         <CardContent className="h-[300px]">
           {categoryData.length > 0 ? (
             isMounted ? (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    dataKey="value"
-                    onClick={(data) => {
-                      const clickedCat = data.name;
-                      onSelectCategory(selectedCategory === clickedCat ? null : clickedCat);
-                    }}
-                    className="cursor-pointer"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={COLORS[index % COLORS.length]} 
-                        className="cursor-pointer hover:opacity-80 transition-opacity"
-                        style={{
-                          opacity: selectedCategory ? (selectedCategory === entry.name ? 1 : 0.3) : 1,
-                        }}
-                      />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip 
-                    formatter={(value: any) => formatCurrency(Number(value))}
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #e4e4e7' }}
-                  />
-                  <Legend layout="vertical" verticalAlign="middle" align="right" />
-                </PieChart>
-              </ResponsiveContainer>
+              <div style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 320, height: 300 }}>
+                  <PieChart>
+                    <Pie
+                      data={categoryData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={2}
+                      dataKey="value"
+                      onClick={(data) => {
+                        const clickedCat = data?.name as string | null | undefined;
+                        onSelectCategory(selectedCategory === clickedCat ? null : (clickedCat ?? null));
+                      }}
+                      className="cursor-pointer"
+                    >
+                      {categoryData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={COLORS[index % COLORS.length]} 
+                          className="cursor-pointer hover:opacity-80 transition-opacity"
+                          style={{
+                            opacity: selectedCategory ? (selectedCategory === entry.name ? 1 : 0.3) : 1,
+                          }}
+                        />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip 
+                      formatter={(value: any) => formatCurrency(Number(value))}
+                      contentStyle={{ borderRadius: '8px', border: '1px solid #e4e4e7' }}
+                    />
+                    <Legend layout="vertical" verticalAlign="middle" align="right" />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             ) : null
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-500">

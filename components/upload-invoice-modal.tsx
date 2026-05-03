@@ -44,12 +44,8 @@ export function UploadInvoiceModal() {
     if (result.error) {
       setError(result.error);
     } else {
-      setSuccess(true);
-      setTimeout(() => {
-        setOpen(false);
-        setSuccess(false);
-        setFile(null);
-      }, 2000);
+      setOpen(false);
+      setFile(null);
     }
   };
 
@@ -119,19 +115,13 @@ export function UploadInvoiceModal() {
             </div>
           )}
 
-          {success && (
-            <div className="bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400 p-3 rounded-md text-sm flex items-center gap-2">
-              <CheckCircle size={20} />
-              <span>Fatura importada com sucesso!</span>
-            </div>
-          )}
         </div>
         <DialogFooter className="sm:justify-between">
           <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={isUploading}>
             Cancelar
           </Button>
-          <Button type="button" onClick={handleUpload} disabled={!file || isUploading || success}>
-            {isUploading ? 'Processando...' : 'Importar Fatura'}
+          <Button type="button" onClick={handleUpload} disabled={!file || isUploading}>
+            {isUploading ? 'Iniciando...' : 'Importar Fatura'}
           </Button>
         </DialogFooter>
       </DialogContent>

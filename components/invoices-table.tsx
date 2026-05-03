@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Eye, Trash } from '@phosphor-icons/react';
+import { Eye, Trash, SpinnerGap } from '@phosphor-icons/react';
 import { deleteInvoice } from '@/lib/invoice-actions';
 import {
   AlertDialog,
@@ -24,6 +24,7 @@ type InvoiceSummary = {
   bank: string;
   totalAmount: number;
   createdAt: Date;
+  status: string;
 };
 
 interface InvoicesTableProps {
@@ -33,6 +34,17 @@ interface InvoicesTableProps {
 export function InvoicesTable({ invoices }: InvoicesTableProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+  // Polling logic
+  useEffect(() => {
+    const hasPending = invoices.some((inv) => inv.status === 'PENDING');
+    if (hasPending) {
+      const intervalId = setInterval(() => {
+        router.refresh();
+      }, 3000);
+      return () => clearInterval(intervalId);
+    }
+  }, [invoices, router]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -74,11 +86,30 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
         </TableHeader>
         <TableBody>
           {invoices.map((invoice) => (
-            <TableRow key={invoice.id} className="group">
+            <TableRow
+              key={invoice.id}
+              className={`group ${invoice.status === 'PROCESSED' ? 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/50' : ''}`}
+              onClick={() => {
+                if (invoice.status === 'PROCESSED') {
+                  handleView(invoice.id);
+                }
+              }}
+            >
               <TableCell>
-                <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                  {invoice.reference}
-                </div>
+                {invoice.status === 'PENDING' ? (
+                  <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 gap-1.5">
+                    <SpinnerGap size={14} className="animate-spin" />
+                    Processando...
+                  </div>
+                ) : invoice.status === 'FAILED' ? (
+                  <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200">
+                    Falha no processamento
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                    {invoice.reference}
+                  </div>
+                )}
               </TableCell>
               <TableCell>
                 <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
@@ -89,12 +120,16 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
                 {formatCurrency(invoice.totalAmount)}
               </TableCell>
               <TableCell className="text-right">
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleView(invoice.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleView(invoice.id);
+                    }}
                     title="Ver detalhes"
+                    disabled={invoice.status !== 'PROCESSED'}
                   >
                     <Eye size={18} />
                   </Button>
@@ -106,11 +141,12 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
                         className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50"
                         disabled={isDeleting === invoice.id}
                         title="Excluir fatura"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <Trash size={18} />
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent>
+                    <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                       <AlertDialogHeader>
                         <AlertDialogTitle>Você tem certeza absoluta?</AlertDialogTitle>
                         <AlertDialogDescription>
