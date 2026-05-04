@@ -200,10 +200,23 @@ import { prisma as globalPrisma } from "@/lib/prisma";
 import { PrismaClient } from "@prisma/client";
 
 function getPrismaClient() {
-  if (globalPrisma && "calendarEvent" in globalPrisma) {
+  if (globalPrisma) {
     return globalPrisma;
   }
-  return new PrismaClient();
+  let dbUrl = process.env.DATABASE_URL;
+  if (dbUrl && !dbUrl.includes("pgbouncer=true") && !dbUrl.includes("statement_cache_size=0")) {
+    const separator = dbUrl.includes("?") ? "&" : "?";
+    dbUrl = `${dbUrl}${separator}pgbouncer=true&statement_cache_size=0`;
+  }
+  return new PrismaClient({
+    datasources: dbUrl
+      ? {
+          db: {
+            url: dbUrl,
+          },
+        }
+      : undefined,
+  });
 }
 
 
