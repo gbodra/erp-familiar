@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react"
 import { CaretLeft, CaretRight, ArrowsClockwise } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { getCalendarEvents, syncCalComEvents } from "@/lib/calendar-actions"
+import { useCache } from "@/hooks/use-cache"
 
 type BookingEvent = {
   id: string
@@ -25,32 +26,50 @@ export default function CalendarPage() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<BookingEvent | null>(null)
+  const [isMounted, setIsMounted] = useState<boolean>(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  const year = currentDate.getFullYear()
+  const month = currentDate.getMonth()
+
+  const fromDateStr = new Date(year, month - 1, 1).toISOString()
+  const toDateStr = new Date(year, month + 2, 0).toISOString()
+
+  // SWR-based frontend cache for database events
+  const { data: cachedCalendarEvents, mutate: mutateEvents } = useCache(
+    `calendar_events_${fromDateStr}_${toDateStr}`,
+    async () => {
+      const dbRes = await getCalendarEvents(fromDateStr, toDateStr)
+      if (dbRes.success && dbRes.data) {
+        return dbRes.data
+      }
+      return []
+    }
+  )
+
+  useEffect(() => {
+    if (cachedCalendarEvents) {
+      setEvents(cachedCalendarEvents)
+    }
+  }, [cachedCalendarEvents])
 
   useEffect(() => {
     loadAndSyncBookings()
   }, [currentDate])
 
   const loadAndSyncBookings = async () => {
-    const year = currentDate.getFullYear()
-    const month = currentDate.getMonth()
-
-    const fromDate = new Date(year, month - 1, 1)
-    const toDate = new Date(year, month + 2, 0)
-
     setSyncError(null)
 
-    // 1. Fetch instantly from the DB
-    const dbRes = await getCalendarEvents(fromDate.toISOString(), toDate.toISOString())
-    if (dbRes.success && dbRes.data) {
-      setEvents(dbRes.data)
-    }
-
-    // 2. Sync with Cal.com in the background
+    // Sync with Cal.com in the background
     setIsSyncing(true)
-    syncCalComEvents(fromDate.toISOString(), toDate.toISOString())
+    syncCalComEvents(fromDateStr, toDateStr)
       .then((syncRes) => {
         if (syncRes.success && syncRes.data) {
           setEvents(syncRes.data)
+          mutateEvents(syncRes.data)
         } else if (syncRes.error) {
           setSyncError(syncRes.error)
         }
@@ -62,6 +81,7 @@ export default function CalendarPage() {
         setIsSyncing(false)
       })
   }
+
 
 
 
@@ -437,6 +457,10 @@ export default function CalendarPage() {
         </div>
       </div>
     )
+  }
+
+  if (!isMounted) {
+    return null
   }
 
   return (

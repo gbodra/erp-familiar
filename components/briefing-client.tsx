@@ -18,6 +18,8 @@ import {
 import { getCalendarEvents, syncCalComEvents } from "@/lib/calendar-actions"
 import { fetchDashboardFinancialData } from "@/lib/dashboard-actions"
 
+import { useCache } from "@/hooks/use-cache"
+
 type BookingEvent = {
   id: string
   title: string
@@ -39,86 +41,76 @@ export function BriefingClient({
   startOfWeekIso: string
   endOfWeekIso: string
 }) {
-  // Financial data fetching states
-  const [financialData, setFinancialData] = useState<{
-    totalDebits: number
-    largestDebit: number
-    transactionsCount: number
-    displayTransactions: any[]
-    usingFallback: boolean
-  } | null>(null)
-  const [isFinancialLoading, setIsFinancialLoading] = useState<boolean>(true)
-
-  // Events data fetching states
   const [events, setEvents] = useState<BookingEvent[]>([])
-  const [isEventsLoading, setIsEventsLoading] = useState<boolean>(true)
   const [isSyncing, setIsSyncing] = useState<boolean>(false)
+  const [isMounted, setIsMounted] = useState<boolean>(false)
 
-  // Fetch financial data independently on mount
   useEffect(() => {
-    async function loadFinancial() {
-      const cacheKey = `financial_${startOfWeekIso}_${endOfWeekIso}`;
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        try {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < 2 * 60 * 1000) {
-            setFinancialData(data);
-            setIsFinancialLoading(false);
-          }
-        } catch (e) {
-          // invalid cache, ignore
-        }
-      } else {
-        setIsFinancialLoading(true);
-      }
+    setIsMounted(true)
+  }, [])
 
+  // Use frontend cache hook for financial data
+  const { data: financialData, isLoading: isFinancialLoading } = useCache(
+    `financial_${startOfWeekIso}_${endOfWeekIso}`,
+    async () => {
       const res = await fetchDashboardFinancialData(startOfWeekIso, endOfWeekIso)
       if (res.success) {
-        const data = {
+        return {
           totalDebits: res.totalDebits || 0,
           largestDebit: res.largestDebit || 0,
           transactionsCount: res.transactionsCount || 0,
           displayTransactions: res.displayTransactions || [],
           usingFallback: res.usingFallback || false,
-        };
-        setFinancialData(data);
-        sessionStorage.setItem(cacheKey, JSON.stringify({ data, timestamp: Date.now() }));
+        }
       }
-      setIsFinancialLoading(false)
-    }
-    loadFinancial()
-  }, [startOfWeekIso, endOfWeekIso])
+      throw new Error(res.error || "Erro ao carregar dados financeiros")
+    },
+    { ttl: 2 * 60 * 1000 }
+  )
 
-  // Fetch events data independently on mount
-  useEffect(() => {
-    async function loadEvents() {
-      setIsEventsLoading(true)
-
+  // Use frontend cache hook for calendar events
+  const { data: cachedEvents, isLoading: isEventsLoading, mutate: mutateEvents } = useCache(
+    `events_${startOfWeekIso}_${endOfWeekIso}`,
+    async () => {
       const dbRes = await getCalendarEvents(startOfWeekIso, endOfWeekIso)
       if (dbRes.success && dbRes.data) {
-        const sorted = dbRes.data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-        setEvents(sorted)
+        return dbRes.data.sort(
+          (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        )
       }
-      setIsEventsLoading(false)
+      return []
+    },
+    { ttl: 2 * 60 * 1000 }
+  )
 
-      setIsSyncing(true)
-      syncCalComEvents(startOfWeekIso, endOfWeekIso)
-        .then((syncRes) => {
-          if (syncRes.success && syncRes.data) {
-            const sorted = syncRes.data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-            setEvents(sorted)
-          }
-        })
-        .catch((err) => {
-          console.error("Erro ao sincronizar eventos no briefing:", err)
-        })
-        .finally(() => {
-          setIsSyncing(false)
-        })
+  // When cached events update, sync with state
+  useEffect(() => {
+    if (cachedEvents) {
+      setEvents(cachedEvents)
     }
-    loadEvents()
+  }, [cachedEvents])
+
+  // Sync latest events in the background
+  useEffect(() => {
+    setIsSyncing(true)
+    syncCalComEvents(startOfWeekIso, endOfWeekIso)
+      .then((syncRes) => {
+        if (syncRes.success && syncRes.data) {
+          const sorted = syncRes.data.sort(
+            (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+          )
+          setEvents(sorted)
+          mutateEvents(sorted)
+        }
+      })
+      .catch((err) => {
+        console.error("Erro ao sincronizar eventos no briefing:", err)
+      })
+      .finally(() => {
+        setIsSyncing(false)
+      })
   }, [startOfWeekIso, endOfWeekIso])
+
 
 
 
@@ -149,6 +141,10 @@ export function BriefingClient({
   let greeting = "Bom dia"
   if (hour >= 12 && hour < 18) greeting = "Boa tarde"
   else if (hour >= 18 || hour < 5) greeting = "Boa noite"
+
+  if (!isMounted) {
+    return null
+  }
 
   return (
     <div className="flex-1 space-y-6 p-8 pt-6 bg-zinc-50 dark:bg-zinc-950 min-h-screen font-sans">

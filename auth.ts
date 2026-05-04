@@ -19,12 +19,18 @@ export const { auth, signIn, signOut, handlers } = NextAuth({
           where: { username }
         });
         
-        if (!user || !user.password) return null;
+        if (!user || !user.password) {
+          // Constant delay to prevent timing attacks (user enumeration)
+          await new Promise(r => setTimeout(r, 500));
+          return null;
+        }
 
         const passwordsMatch = await bcrypt.compare(password, user.password);
 
         if (passwordsMatch) return user;
-        
+
+        // Delay on failure to slow down brute-force
+        await new Promise(r => setTimeout(r, 500));
         return null;
       },
     }),

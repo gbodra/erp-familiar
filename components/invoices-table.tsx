@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Eye, Trash, SpinnerGap } from '@phosphor-icons/react';
-import { deleteInvoice } from '@/lib/invoice-actions';
+import { Input } from '@/components/ui/input';
+import { Eye, Trash, SpinnerGap, PencilSimple, Check, X } from '@phosphor-icons/react';
+import { deleteInvoice, updateInvoiceReference } from '@/lib/invoice-actions';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +35,10 @@ interface InvoicesTableProps {
 export function InvoicesTable({ invoices }: InvoicesTableProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Polling logic
   useEffect(() => {
@@ -45,6 +50,14 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
       return () => clearInterval(intervalId);
     }
   }, [invoices, router]);
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (editingId && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editingId]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -63,6 +76,40 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
 
   const handleView = (id: string) => {
     router.push(`/credit-card/${id}`);
+  };
+
+  const startEditing = (invoice: InvoiceSummary) => {
+    setEditingId(invoice.id);
+    setEditValue(invoice.reference);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditValue('');
+  };
+
+  const saveReference = async () => {
+    if (!editingId || !editValue.trim()) return;
+
+    setIsSaving(true);
+    const result = await updateInvoiceReference(editingId, editValue);
+    if (result.error) {
+      alert(result.error);
+    } else {
+      router.refresh();
+    }
+    setIsSaving(false);
+    setEditingId(null);
+    setEditValue('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveReference();
+    } else if (e.key === 'Escape') {
+      cancelEditing();
+    }
   };
 
   if (invoices.length === 0) {
@@ -88,9 +135,9 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
           {invoices.map((invoice) => (
             <TableRow
               key={invoice.id}
-              className={`group ${invoice.status === 'PROCESSED' ? 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/50' : ''}`}
+              className={`group ${invoice.status === 'PROCESSED' && editingId !== invoice.id ? 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/50' : ''}`}
               onClick={() => {
-                if (invoice.status === 'PROCESSED') {
+                if (invoice.status === 'PROCESSED' && editingId !== invoice.id) {
                   handleView(invoice.id);
                 }
               }}
@@ -105,9 +152,62 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
                   <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200">
                     Falha no processamento
                   </div>
+                ) : editingId === invoice.id ? (
+                  <div
+                    className="flex items-center gap-1.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Input
+                      ref={inputRef}
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      className="h-8 w-28 text-xs sm:w-36"
+                      placeholder="ex: 2025-04"
+                      disabled={isSaving}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/50"
+                      onClick={saveReference}
+                      disabled={isSaving}
+                      title="Salvar"
+                    >
+                      {isSaving ? (
+                        <SpinnerGap size={14} className="animate-spin" />
+                      ) : (
+                        <Check size={16} weight="bold" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                      onClick={cancelEditing}
+                      disabled={isSaving}
+                      title="Cancelar"
+                    >
+                      <X size={16} weight="bold" />
+                    </Button>
+                  </div>
                 ) : (
-                  <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                    {invoice.reference}
+                  <div className="inline-flex items-center gap-1.5">
+                    <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                      {invoice.reference}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEditing(invoice);
+                      }}
+                      title="Editar referência"
+                    >
+                      <PencilSimple size={14} />
+                    </Button>
                   </div>
                 )}
               </TableCell>

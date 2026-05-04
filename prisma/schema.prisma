@@ -101,4 +101,11 @@ model CalendarEvent {
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
+model CalendarSyncLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  lastSync  DateTime @default(now())
+}
+
+
 

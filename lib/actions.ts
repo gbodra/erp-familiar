@@ -5,11 +5,29 @@ import { AuthError } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { revalidatePath } from 'next/cache';
+import { rateLimit } from '@/lib/rate-limit';
 
 export async function authenticate(
   prevState: string | undefined,
   formData: FormData,
 ) {
+  const username = (formData.get('username') as string)?.trim();
+
+  if (!username) {
+    return 'Usuário é obrigatório.';
+  }
+
+  // Rate limit: 5 login attempts per username per 60 seconds
+  const limiter = rateLimit(username, {
+    maxAttempts: 5,
+    windowMs: 60 * 1000,
+  });
+
+  if (!limiter.success) {
+    const waitSeconds = Math.ceil((limiter.resetAt - Date.now()) / 1000);
+    return `Muitas tentativas. Tente novamente em ${waitSeconds} segundos.`;
+  }
+
   try {
     await signIn('credentials', {
       ...Object.fromEntries(formData),
@@ -37,14 +55,34 @@ export async function register(
     return 'Apenas administradores podem cadastrar novos usuários.';
   }
 
-  const username = formData.get('username') as string;
-  const name = formData.get('name') as string;
+  const username = (formData.get('username') as string)?.trim();
+  const name = (formData.get('name') as string)?.trim();
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
   const role = (formData.get('role') as string) || 'USER';
 
+  if (!username || !name || !password || !confirmPassword) {
+    return 'Todos os campos são obrigatórios.';
+  }
+
+  if (username.length < 3 || username.length > 50) {
+    return 'O nome de usuário deve ter entre 3 e 50 caracteres.';
+  }
+
+  if (name.length > 100) {
+    return 'O nome deve ter no máximo 100 caracteres.';
+  }
+
+  if (password.length < 6) {
+    return 'A senha deve ter pelo menos 6 caracteres.';
+  }
+
   if (password !== confirmPassword) {
     return 'As senhas não coincidem.';
+  }
+
+  if (role !== 'USER' && role !== 'ADMIN') {
+    return 'Tipo de usuário inválido.';
   }
 
   const existingUser = await prisma.user.findUnique({
@@ -85,6 +123,14 @@ export async function changePassword(
   const currentPassword = formData.get('currentPassword') as string;
   const newPassword = formData.get('newPassword') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return 'Todos os campos são obrigatórios.';
+  }
+
+  if (newPassword.length < 6) {
+    return 'A nova senha deve ter pelo menos 6 caracteres.';
+  }
 
   if (newPassword !== confirmPassword) {
     return 'As novas senhas não coincidem.';
@@ -163,6 +209,12 @@ export async function changeName(name: string) {
   if (!session?.user?.id) {
     return 'Não autorizado.';
   }
+
+  if (!name?.trim() || name.trim().length > 100) {
+    return 'Nome inválido. Deve ter entre 1 e 100 caracteres.';
+  }
+
+  name = name.trim();
 
   try {
     await prisma.user.update({

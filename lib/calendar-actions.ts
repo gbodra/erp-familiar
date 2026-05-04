@@ -1,7 +1,14 @@
 'use server'
 
+import { auth } from "@/auth";
+
 export async function fetchCalComBookings(dateFromStr?: string, dateToStr?: string) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: 'Não autorizado.' };
+    }
+
     const token = process.env.CALCOM_API_KEY;
     if (!token) {
       return { success: false, error: "Token da API do Cal.com não configurado no arquivo .env" };
@@ -106,42 +113,42 @@ export async function fetchCalComBookings(dateFromStr?: string, dateToStr?: stri
           to = to.split('T')[0];
         }
 
-        // Fetch busy times for each connected calendar
-        for (const cal of calendars) {
+        // Fetch busy times for each connected calendar in parallel
+        const busyPromises = calendars.map(async (cal) => {
           if (cal.credentialId && cal.externalId) {
-            const url = `https://api.cal.com/v2/calendars/busy-times?timeZone=America/Sao_Paulo&dateFrom=${from}&dateTo=${to}&calendarsToLoad[0][credentialId]=${cal.credentialId}&calendarsToLoad[0][externalId]=${encodeURIComponent(cal.externalId)}`;
+            try {
+              const url = `https://api.cal.com/v2/calendars/busy-times?timeZone=America/Sao_Paulo&dateFrom=${from}&dateTo=${to}&calendarsToLoad[0][credentialId]=${cal.credentialId}&calendarsToLoad[0][externalId]=${encodeURIComponent(cal.externalId)}`;
 
-            const busyRes = await fetch(url, {
-              method: "GET",
-              headers: {
-                "Authorization": `Bearer ${token}`,
-                "cal-api-version": "2024-08-13"
-              },
-              next: { revalidate: 0 }
-            });
+              const busyRes = await fetch(url, {
+                method: "GET",
+                headers: {
+                  "Authorization": `Bearer ${token}`,
+                  "cal-api-version": "2024-08-13"
+                },
+                next: { revalidate: 0 }
+              });
 
-            if (busyRes.ok) {
-              const busyJson = await busyRes.json();
-              let slots: any[] = [];
-              if (busyJson && busyJson.status === "success" && Array.isArray(busyJson.data)) {
-                slots = busyJson.data;
-              } else if (Array.isArray(busyJson.data)) {
-                slots = busyJson.data;
-              } else if (Array.isArray(busyJson)) {
-                slots = busyJson;
-              } else if (busyJson && typeof busyJson === "object") {
-                if (Array.isArray(busyJson.busy)) {
-                  slots = busyJson.busy;
-                } else if (busyJson.data && Array.isArray(busyJson.data.busy)) {
-                  slots = busyJson.data.busy;
-                } else if (Array.isArray(busyJson.busyTimes)) {
-                  slots = busyJson.busyTimes;
+              if (busyRes.ok) {
+                const busyJson = await busyRes.json();
+                let slots: any[] = [];
+                if (busyJson && busyJson.status === "success" && Array.isArray(busyJson.data)) {
+                  slots = busyJson.data;
+                } else if (Array.isArray(busyJson.data)) {
+                  slots = busyJson.data;
+                } else if (Array.isArray(busyJson)) {
+                  slots = busyJson;
+                } else if (busyJson && typeof busyJson === "object") {
+                  if (Array.isArray(busyJson.busy)) {
+                    slots = busyJson.busy;
+                  } else if (busyJson.data && Array.isArray(busyJson.data.busy)) {
+                    slots = busyJson.data.busy;
+                  } else if (Array.isArray(busyJson.busyTimes)) {
+                    slots = busyJson.busyTimes;
+                  }
                 }
-              }
 
-              if (Array.isArray(slots)) {
-                slots.forEach((slot: any, idx: number) => {
-                  mappedEvents.push({
+                if (Array.isArray(slots)) {
+                  return slots.map((slot: any, idx: number) => ({
                     id: `busy-${cal.id || cal.credentialId}-${idx}-${slot.start}`,
                     uid: `busy-${cal.id || cal.credentialId}-${idx}-${slot.start}`,
                     title: "Ocupado (Agenda Externa)",
@@ -150,10 +157,20 @@ export async function fetchCalComBookings(dateFromStr?: string, dateToStr?: stri
                     endTime: slot.end,
                     status: "BUSY",
                     attendees: []
-                  });
-                });
+                  }));
+                }
               }
+            } catch (err) {
+              console.error(`Erro ao buscar busy-times para ${cal.externalId}:`, err);
             }
+          }
+          return [];
+        });
+
+        const busySlotsArrays = await Promise.all(busyPromises);
+        for (const slots of busySlotsArrays) {
+          if (slots && slots.length > 0) {
+            mappedEvents.push(...slots);
           }
         }
       }
@@ -189,7 +206,6 @@ function getPrismaClient() {
   return new PrismaClient();
 }
 
-import { auth } from "@/auth";
 
 export async function getCalendarEvents(dateFromStr?: string, dateToStr?: string) {
   try {
@@ -259,6 +275,51 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
       userId = dbUser.id;
     }
 
+    const fromDateStr = dateFromStr || new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString();
+    const toDateStr = dateToStr || new Date(new Date().getFullYear(), new Date().getMonth() + 2, 0).toISOString();
+
+    const origStartRange = new Date(fromDateStr);
+    const origEndRange = new Date(toDateStr);
+
+    // 1. Controle de sync de 5 minutos
+    const lastSync = await prismaClient.calendarSyncLog.findFirst({
+      where: { userId: userId || null },
+      orderBy: { lastSync: "desc" },
+    });
+
+    const now = new Date();
+    if (lastSync && now.getTime() - new Date(lastSync.lastSync).getTime() < 5 * 60 * 1000) {
+      const finalWhere: any = {
+        startTime: { lte: origEndRange },
+        endTime: { gte: origStartRange },
+      };
+
+      if (session?.user?.role !== 'ADMIN') {
+        finalWhere.OR = [
+          { userId: userId },
+          { userId: null },
+        ];
+      }
+
+      const cachedEvents = await prismaClient.calendarEvent.findMany({
+        where: finalWhere,
+        orderBy: { startTime: "asc" },
+      });
+
+      const mappedCachedEvents = cachedEvents.map((ev) => ({
+        id: ev.id,
+        uid: ev.uid || undefined,
+        title: ev.title,
+        description: ev.description || undefined,
+        startTime: ev.startTime.toISOString(),
+        endTime: ev.endTime.toISOString(),
+        status: ev.status,
+        attendees: ev.attendees ? JSON.parse(ev.attendees) : undefined,
+      }));
+
+      return { success: true, data: mappedCachedEvents };
+    }
+
     // Never fetch from Cal.com in the past
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -278,14 +339,11 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
       return calRes;
     }
 
-    const calComEvents = calRes.data;
-
-    // Range boundaries for overlap filtering
-    const fromDateStr = dateFromStr || new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString();
-    const toDateStr = dateToStr || new Date(new Date().getFullYear(), new Date().getMonth() + 2, 0).toISOString();
-
-    const origStartRange = new Date(fromDateStr);
-    const origEndRange = new Date(toDateStr);
+    // Filtrar eventos ativos e ignorar cancelados ou deletados
+    const calComEvents = calRes.data.filter((ev: any) => {
+      const status = String(ev.status || '').toUpperCase();
+      return status !== "CANCELLED" && status !== "REJECTED" && !status.includes("CANCEL");
+    });
 
     const startRange = origStartRange < today ? today : origStartRange;
     const endRange = origEndRange;
@@ -347,6 +405,14 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
       });
     }
 
+    // Registrar o sync log no banco
+    await prismaClient.calendarSyncLog.create({
+      data: {
+        userId: userId || null,
+        lastSync: new Date(),
+      }
+    });
+
     // 4. Return complete set of events from the ORIGINAL requested timeframe
     const finalWhere: any = {
       startTime: { lte: origEndRange },
@@ -382,5 +448,6 @@ export async function syncCalComEvents(dateFromStr?: string, dateToStr?: string)
     return { success: false, error: err.message || "Erro desconhecido ao sincronizar eventos" };
   }
 }
+
 
 

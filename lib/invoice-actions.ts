@@ -483,3 +483,40 @@ export async function deleteInvoice(id: string) {
     return { error: 'Falha ao excluir a fatura.' };
   }
 }
+
+export async function updateInvoiceReference(id: string, reference: string) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { error: 'Não autorizado' };
+    }
+
+    if (!reference || reference.trim().length === 0) {
+      return { error: 'A referência não pode ser vazia.' };
+    }
+
+    const existingInvoice = await prisma.invoice.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+
+    if (!existingInvoice) {
+      return { error: 'Fatura não encontrada.' };
+    }
+
+    if (session.user.role !== 'ADMIN' && existingInvoice.userId !== session.user.id) {
+      return { error: 'Não autorizado para editar esta fatura.' };
+    }
+
+    await prisma.invoice.update({
+      where: { id },
+      data: { reference: reference.trim() },
+    });
+
+    revalidatePath('/credit-card');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Update invoice reference error:', error);
+    return { error: 'Falha ao atualizar a referência da fatura.' };
+  }
+}
